@@ -17,6 +17,7 @@ import static spark.Spark.*;
 public class Main {
 
     public static void main(String... args) throws Exception {
+
         var datasource = JdbcConnectionPool.create(
                 "jdbc:h2:mem:natter", "natter", "password");
         var database = Database.forDataSource(datasource);
@@ -31,16 +32,37 @@ public class Main {
         post("/spaces",
                 spaceController::createSpace);
 
+        // ensure that only JSON is accepted (preventing XSS attacks)
+        before(((request, response) -> {
+            if (request.requestMethod().equals("POST") &&
+                    !"application/json".equals(request.contentType())) {
+                halt(415, new JSONObject().put(
+                        "error", "Only application/json supported"
+                ).toString());
+            }
+        }));
+
+        // always return JSON
         after((request, response) -> {
             response.type("application/json");
         });
 
-        afterAfter((request, response) ->
-                response.header("Server", ""));
+        // security headers preventing XSS attacks and other attacks like clickjacking or fingerprinting (hiding the server)
+        afterAfter((request, response) -> {
+            response.type("application/json;charset=utf-8");
+            response.header("X-Content-Type-Options", "nosniff");
+            response.header("X-Frame-Options", "DENY");
+            response.header("X-XSS-Protection", "0");
+            response.header("Cache-Control", "no-store");
+            response.header("Content-Security-Policy",
+                    "default-src 'none'; frame-ancestors 'none'; sandbox");
+            response.header("Server", "");
+        });
 
-                internalServerError(new JSONObject()
+        internalServerError(new JSONObject()
                 .put("error", "internal server error").toString());
 
+        // turn exceptions into appropriate responses
         notFound(new JSONObject()
                 .put("error", "not found").toString());
         exception(IllegalArgumentException.class,
@@ -54,6 +76,7 @@ public class Main {
     private static void badRequest(Exception ex,
                                    Request request, Response response) {
         response.status(400);
+        // do not expose internal exceptions to the client (only the error message)
         response.body("{\"error\": \"" + ex.getMessage() + "\"}");
     }
 
