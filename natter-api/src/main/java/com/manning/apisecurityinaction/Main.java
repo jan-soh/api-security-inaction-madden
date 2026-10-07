@@ -18,6 +18,10 @@ public class Main {
         var database = Database.forDataSource(datasource);
         createTables(database);
 
+        datasource = JdbcConnectionPool.create(
+                "jdbc:h2:mem:natter", "natter_api_user", "password");
+        database = Database.forDataSource(datasource);
+
         var spaceController =
                 new SpaceController(database);
         post("/spaces",
@@ -29,7 +33,7 @@ public class Main {
 
         internalServerError(new JSONObject()
                 .put("error", "internal server error").toString());
-        
+
         notFound(new JSONObject()
                 .put("error", "not found").toString());
     }
