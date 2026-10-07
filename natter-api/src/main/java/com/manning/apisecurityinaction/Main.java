@@ -35,7 +35,10 @@ public class Main {
             response.type("application/json");
         });
 
-        internalServerError(new JSONObject()
+        afterAfter((request, response) ->
+                response.header("Server", ""));
+        
+                internalServerError(new JSONObject()
                 .put("error", "internal server error").toString());
 
         notFound(new JSONObject()
