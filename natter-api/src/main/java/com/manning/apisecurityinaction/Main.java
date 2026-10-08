@@ -31,12 +31,15 @@ public class Main {
 
         var spaceController =
                 new SpaceController(database);
-        
+
         post("/spaces",
                 spaceController::createSpace);
 
         var userController = new UserController(database);
         post("/users", userController::registerUser);
+
+        // check if the user is authenticated
+        before(userController::authenticate);
 
         var rateLimiter = RateLimiter.create(2.0d);
 

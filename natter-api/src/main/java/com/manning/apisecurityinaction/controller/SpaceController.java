@@ -25,9 +25,10 @@ public class SpaceController {
         }
 
         var owner = json.getString("owner");
-        if (!owner.matches("[a-zA-Z][a-zA-Z0-9]{1,29}")) {
-            // do not include the username in the error message to avoid bad effects (e.g., XSS)
-            throw new IllegalArgumentException("invalid username");
+        var subject = request.attribute("subject");
+        if (!owner.equals(subject)) {
+            throw new IllegalArgumentException(
+                    "owner must match authenticated user");
         }
 
         return database.withTransaction(tx -> {
@@ -36,7 +37,7 @@ public class SpaceController {
 
             database.updateUnique(
                     "INSERT INTO spaces(space_id, name, owner) " +
-                            "VALUES(?, ?, ?);",  + spaceId, spaceName, owner);
+                            "VALUES(?, ?, ?);", +spaceId, spaceName, owner);
 
             response.status(201);
             response.header("Location", "/spaces/" + spaceId);
