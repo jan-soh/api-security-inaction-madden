@@ -1,0 +1,11 @@
+Enable HTTPS
+
+Note that the generated private key is not part of this commit for security reasons.
+
+Use https://github.com/FiloSottile/mkcert to generate a key by yourself:
+
+(sudo) mkcert -install
+(sudo) mkcert -pkcs12 localhost
+
+after development suggest:
+mkcert -uninstall
