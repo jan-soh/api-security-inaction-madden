@@ -78,6 +78,9 @@ public class Main {
             response.header("Content-Security-Policy",
                     "default-src 'none'; frame-ancestors 'none'; sandbox");
             response.header("Server", "");
+
+            // enforce HTTPS (to support local development, max-age is quite low. Usually, this should be a much higher value e.g., 31536000)
+            response.header("Strict-Transport-Security", "max-age=30000");
         });
 
         internalServerError(new JSONObject()
