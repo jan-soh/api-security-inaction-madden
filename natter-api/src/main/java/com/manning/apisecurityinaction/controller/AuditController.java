@@ -1,13 +1,10 @@
 package com.manning.apisecurityinaction.controller;
 
 import org.dalesbred.Database;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import spark.Request;
-import spark.Response;
+import org.json.*;
+import spark.*;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
@@ -34,7 +31,6 @@ public class AuditController {
                     request.attribute("subject"));
         });
     }
-
     public void auditRequestEnd(Request request, Response response) {
         database.updateUnique(
                 "INSERT INTO audit_log(audit_id, method, path, status, " +
@@ -52,6 +48,7 @@ public class AuditController {
         var logs = database.findAll(AuditController::recordToJson,
                 "SELECT * FROM audit_log " +
                         "WHERE audit_time >= ? LIMIT 20", since);
+
         return new JSONArray(logs);
     }
 

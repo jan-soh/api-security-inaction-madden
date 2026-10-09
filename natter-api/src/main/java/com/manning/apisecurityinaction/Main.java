@@ -1,69 +1,44 @@
 package com.manning.apisecurityinaction;
 
-import com.google.common.util.concurrent.RateLimiter;
-import com.manning.apisecurityinaction.controller.AuditController;
-import com.manning.apisecurityinaction.controller.SpaceController;
-import com.manning.apisecurityinaction.controller.UserController;
+import static spark.Spark.*;
+
+import java.nio.file.*;
+
 import org.dalesbred.Database;
 import org.dalesbred.result.EmptyResultException;
 import org.h2.jdbcx.JdbcConnectionPool;
-import org.json.JSONException;
-import org.json.JSONObject;
-import spark.Request;
-import spark.Response;
+import org.json.*;
 
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import com.google.common.util.concurrent.RateLimiter;
+import com.manning.apisecurityinaction.controller.*;
 
-import static spark.Spark.*;
+import spark.*;
 
 public class Main {
 
     public static void main(String... args) throws Exception {
-
-        // enable TLS (HTTPS)
         secure("localhost.p12", "changeit", null, null);
-
         var datasource = JdbcConnectionPool.create(
                 "jdbc:h2:mem:natter", "natter", "password");
         var database = Database.forDataSource(datasource);
         createTables(database);
-
         datasource = JdbcConnectionPool.create(
                 "jdbc:h2:mem:natter", "natter_api_user", "password");
+
         database = Database.forDataSource(datasource);
-
+        var spaceController = new SpaceController(database);
         var userController = new UserController(database);
-        post("/users", userController::registerUser);
-
-        // check if the user is authenticated
-        before(userController::authenticate);
-
         var auditController = new AuditController(database);
-        before(auditController::auditRequestStart);
-        afterAfter(auditController::auditRequestEnd);
-
-        get("/logs", auditController::readAuditLog);
-        ;
-        before("/spaces", userController::requireAuthentication);
-
-        var spaceController =
-                new SpaceController(database);
-
-        post("/spaces",
-                spaceController::createSpace);
 
         var rateLimiter = RateLimiter.create(2.0d);
 
-        before(((request, response) -> {
-
-            // use rate limiting to prevent abuse
+        before((request, response) -> {
             if (!rateLimiter.tryAcquire()) {
-                response.header("Retry-After", "2");
                 halt(429);
             }
+        });
 
-            // ensure that only JSON is accepted (preventing XSS attacks)
+        before(((request, response) -> {
             if (request.requestMethod().equals("POST") &&
                     !"application/json".equals(request.contentType())) {
                 halt(415, new JSONObject().put(
@@ -72,12 +47,6 @@ public class Main {
             }
         }));
 
-        // always return JSON
-        after((request, response) -> {
-            response.type("application/json");
-        });
-
-        // security headers preventing XSS attacks and other attacks like clickjacking or fingerprinting (hiding the server)
         afterAfter((request, response) -> {
             response.type("application/json;charset=utf-8");
             response.header("X-Content-Type-Options", "nosniff");
@@ -87,21 +56,53 @@ public class Main {
             response.header("Content-Security-Policy",
                     "default-src 'none'; frame-ancestors 'none'; sandbox");
             response.header("Server", "");
-
-            // enforce HTTPS (to support local development, max-age is quite low. Usually, this should be a much higher value e.g., 31536000)
-            response.header("Strict-Transport-Security", "max-age=30000");
         });
+
+        before(userController::authenticate);
+
+        before(auditController::auditRequestStart);
+        afterAfter(auditController::auditRequestEnd);
+
+        before("/spaces", userController::requireAuthentication);
+        post("/spaces", spaceController::createSpace);
+
+        // Additional REST endpoints not covered in the book:
+
+        before("/spaces/:spaceId/messages",
+                userController.requirePermission("POST", "w"));
+        post("/spaces/:spaceId/messages", spaceController::postMessage);
+
+        before("/spaces/:spaceId/messages/*",
+                userController.requirePermission("GET", "r"));
+        get("/spaces/:spaceId/messages/:msgId",
+                spaceController::readMessage);
+
+        before("/spaces/:spaceId/messages",
+                userController.requirePermission("GET", "r"));
+        get("/spaces/:spaceId/messages", spaceController::findMessages);
+
+        before("/spaces/:spaceId/members",
+                userController.requirePermission("POST", "rwd"));
+        post("/spaces/:spaceId/members", spaceController::addMember);
+
+        var moderatorController =
+                new ModeratorController(database);
+
+        before("/spaces/:spaceId/messages/*",
+                userController.requirePermission("DELETE", "d"));
+        delete("/spaces/:spaceId/messages/:msgId",
+                moderatorController::deletePost);
+
+        get("/logs", auditController::readAuditLog);
+        post("/users", userController::registerUser);
 
         internalServerError(new JSONObject()
                 .put("error", "internal server error").toString());
-
-        // turn exceptions into appropriate responses
         notFound(new JSONObject()
                 .put("error", "not found").toString());
-        exception(IllegalArgumentException.class,
-                Main::badRequest);
-        exception(JSONException.class,
-                Main::badRequest);
+
+        exception(IllegalArgumentException.class, Main::badRequest);
+        exception(JSONException.class, Main::badRequest);
         exception(EmptyResultException.class,
                 (e, request, response) -> response.status(404));
     }
@@ -109,12 +110,10 @@ public class Main {
     private static void badRequest(Exception ex,
                                    Request request, Response response) {
         response.status(400);
-        // do not expose internal exceptions to the client (only the error message)
-        response.body("{\"error\": \"" + ex.getMessage() + "\"}");
+        response.body(new JSONObject().put("error", ex.getMessage()).toString());
     }
 
-    private static void createTables(Database database)
-            throws Exception {
+    private static void createTables(Database database) throws Exception {
         var path = Paths.get(
                 Main.class.getResource("/schema.sql").toURI());
         database.update(Files.readString(path));

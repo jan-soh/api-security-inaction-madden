@@ -1,15 +1,14 @@
 package com.manning.apisecurityinaction.controller;
 
-import com.lambdaworks.crypto.SCryptUtil;
-import org.dalesbred.Database;
-import org.json.JSONObject;
-import spark.Request;
-import spark.Response;
+import com.lambdaworks.crypto.*;
+import org.dalesbred.*;
+import org.json.*;
+import spark.*;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.nio.charset.*;
+import java.util.*;
 
-import static spark.Spark.halt;
+import static spark.Spark.*;
 
 public class UserController {
     private static final String USERNAME_PATTERN =
@@ -46,7 +45,6 @@ public class UserController {
     }
 
     public void authenticate(Request request, Response response) {
-
         var authHeader = request.headers("Authorization");
         if (authHeader == null || !authHeader.startsWith("Basic ")) {
             return;
@@ -71,18 +69,38 @@ public class UserController {
         var hash = database.findOptional(String.class,
                 "SELECT pw_hash FROM users WHERE user_id = ?", username);
 
-        if (hash.isPresent() &&
-                SCryptUtil.check(password, hash.get())) {
+        if (hash.isPresent() && SCryptUtil.check(password, hash.get())) {
             request.attribute("subject", username);
         }
     }
 
-    public void requireAuthentication(Request request,
-                                      Response response) {
+    public void requireAuthentication(Request request, Response response) {
         if (request.attribute("subject") == null) {
             response.header("WWW-Authenticate",
                     "Basic realm=\"/\", charset=\"UTF-8\"");
             halt(401);
         }
+    }
+
+    public Filter requirePermission(String method, String permission) {
+        return (request, response) -> {
+            if (!method.equalsIgnoreCase(request.requestMethod())) {
+                return;
+            }
+
+            requireAuthentication(request, response);
+
+            var spaceId = Long.parseLong(request.params(":spaceId"));
+            var username = (String) request.attribute("subject");
+
+            var perms = database.findOptional(String.class,
+                    "SELECT perms FROM permissions " +
+                            "WHERE space_id = ? AND user_id = ?",
+                    spaceId, username).orElse("");
+
+            if (!perms.contains(permission)) {
+                halt(403);
+            }
+        };
     }
 }
