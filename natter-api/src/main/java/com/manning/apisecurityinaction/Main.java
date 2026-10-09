@@ -1,6 +1,7 @@
 package com.manning.apisecurityinaction;
 
 import com.google.common.util.concurrent.RateLimiter;
+import com.manning.apisecurityinaction.controller.AuditController;
 import com.manning.apisecurityinaction.controller.SpaceController;
 import com.manning.apisecurityinaction.controller.UserController;
 import org.dalesbred.Database;
@@ -32,17 +33,25 @@ public class Main {
                 "jdbc:h2:mem:natter", "natter_api_user", "password");
         database = Database.forDataSource(datasource);
 
-        var spaceController =
-                new SpaceController(database);
-
-        post("/spaces",
-                spaceController::createSpace);
-
         var userController = new UserController(database);
         post("/users", userController::registerUser);
 
         // check if the user is authenticated
         before(userController::authenticate);
+
+        var auditController = new AuditController(database);
+        before(auditController::auditRequestStart);
+        afterAfter(auditController::auditRequestEnd);
+
+        get("/logs", auditController::readAuditLog);
+        ;
+        before("/spaces", userController::requireAuthentication);
+
+        var spaceController =
+                new SpaceController(database);
+
+        post("/spaces",
+                spaceController::createSpace);
 
         var rateLimiter = RateLimiter.create(2.0d);
 
