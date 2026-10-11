@@ -1,18 +1,22 @@
 package com.manning.apisecurityinaction;
 
-import static spark.Spark.*;
-
-import java.nio.file.*;
-
+import com.google.common.util.concurrent.RateLimiter;
+import com.manning.apisecurityinaction.controller.*;
+import com.manning.apisecurityinaction.token.CookieTokenStore;
+import com.manning.apisecurityinaction.token.TokenStore;
 import org.dalesbred.Database;
 import org.dalesbred.result.EmptyResultException;
 import org.h2.jdbcx.JdbcConnectionPool;
-import org.json.*;
+import org.json.JSONException;
+import org.json.JSONObject;
+import spark.Request;
+import spark.Response;
+import spark.Spark;
 
-import com.google.common.util.concurrent.RateLimiter;
-import com.manning.apisecurityinaction.controller.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
-import spark.*;
+import static spark.Spark.*;
 
 public class Main {
 
@@ -32,6 +36,8 @@ public class Main {
         var spaceController = new SpaceController(database);
         var userController = new UserController(database);
         var auditController = new AuditController(database);
+        TokenStore tokenStore = new CookieTokenStore();
+        var tokenController = new TokenController(tokenStore);
 
         var rateLimiter = RateLimiter.create(2.0d);
 
@@ -69,7 +75,8 @@ public class Main {
         before("/spaces", userController::requireAuthentication);
         post("/spaces", spaceController::createSpace);
 
-        // Additional REST endpoints not covered in the book:
+        before("/sessions", userController::requireAuthentication);
+        post("/sessions", tokenController::login);
 
         before("/spaces/:spaceId/messages",
                 userController.requirePermission("POST", "w"));
